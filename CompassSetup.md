@@ -1,4 +1,4 @@
-1) Create new conda environment with python 3.6:
+1) Create a new conda environment with python 3.6:
 
 `conda create --name py36 python=3.6`
 
