@@ -8,7 +8,7 @@
 
 3) Activate the environment:
 
-`conda activate py36``
+`conda activate py36`
 
 4) Install cplex:
 
