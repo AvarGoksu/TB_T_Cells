@@ -1,4 +1,4 @@
-1) `COMPASS` is dependent on `cplex`. `cplex` currently doesn't work for python 3.7 and above. So if you don't have a python 3.6 environment, create a new conda environment with python 3.6:
+1) `COMPASS` is dependent on `cplex`, which currently doesn't work for python 3.7 and above. So if you don't have a python 3.6 environment, create a new conda environment with python 3.6:
 
 `conda create --name py36 python=3.6`
 
