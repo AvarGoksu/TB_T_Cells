@@ -20,7 +20,7 @@
 
 6) Install scanpy:
 
-`pip install scanpy``
+`pip install scanpy`
 
 7) Install compass:
 
