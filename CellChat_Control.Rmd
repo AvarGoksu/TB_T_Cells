@@ -1,0 +1,176 @@
+```{r}
+rm(list = ls())
+library(CellChat)
+library(patchwork)
+library(reticulate)
+library(NMF)
+library(ggalluvial)
+options(stringsAsFactors = FALSE)
+CellChatDB <- CellChatDB.human # use CellChatDB.mouse if running on mouse data
+showDatabaseCategory(CellChatDB)
+```
+
+```{r}
+ad <- import("anndata", convert = FALSE)
+ad_object_control <- ad$read_h5ad("Subsampled_Control.h5ad")
+```
+
+```{r}
+# access the data matrix and normalize it
+data.input_control <- t(py_to_r(ad_object_control$X))
+data.input_control <- normalizeData(data.input_control)
+```
+
+```{r}
+rownames(data.input_control) <- rownames(py_to_r(ad_object_control$var))
+colnames(data.input_control) <- rownames(py_to_r(ad_object_control$obs))
+```
+
+```{r}
+meta.data_control <- py_to_r(ad_object_control$obs)
+meta_control <- meta.data_control
+meta_control$Cell_ID <- row.names(meta_control)
+```
+
+```{r}
+cellchat_control <- createCellChat(object = data.input_control, meta = meta_control, group.by = "cluster_ids")
+```
+
+```{r}
+cellchat_control <- addMeta(cellchat_control, meta = meta_control)
+levels(cellchat_control@idents)
+```
+
+```{r}
+cellchat_control@DB <- CellChatDB
+```
+
+```{r}
+# subset the expression data of signaling genes for saving computation cost
+cellchat_control <- subsetData(cellchat_control) # This step is necessary even if using the whole database
+future::plan("multiprocess", workers = 4) # do parallel
+cellchat_control <- identifyOverExpressedGenes(cellchat_control)
+cellchat_control <- identifyOverExpressedInteractions(cellchat_control)
+# project gene expression data onto PPI network (optional)
+cellchat_control <- projectData(cellchat_control, PPI.human)
+```
+
+```{r}
+cellchat_control <- computeCommunProb(cellchat_control)
+# Filter out the cell-cell communication if there are only few number of cells in certain cell groups
+cellchat_control <- filterCommunication(cellchat_control, min.cells = 10)
+```
+
+```{r}
+cellchat_control <- computeCommunProbPathway(cellchat_control)
+```
+
+```{r}
+cellchat_control <- aggregateNet(cellchat_control)
+```
+
+```{r}
+groupSize <- as.numeric(table(cellchat_control@idents))
+```
+
+```{r}
+mat <- cellchat_control@net$weight
+par(mfrow = c(3,4), xpd=TRUE)
+for (i in 1:nrow(mat)) {
+  mat2 <- matrix(0, nrow = nrow(mat), ncol = ncol(mat), dimnames = dimnames(mat))
+  mat2[i, ] <- mat[i, ]
+  netVisual_circle(mat2, vertex.weight = groupSize, weight.scale = T, edge.weight.max = max(mat), title.name = rownames(mat)[i])
+}
+```
+
+```{r}
+df.net <- subsetCommunication(cellchat_control)
+```
+
+
+```{r}
+pathways.show <- c("CCL") 
+# Hierarchy plot
+# Here we define `vertex.receive` so that the left portion of the hierarchy plot shows signaling to fibroblast and the right portion shows signaling to immune cells 
+vertex.receiver = seq(1,4) # a numeric vector. 
+netVisual_aggregate(cellchat_control, signaling = pathways.show,  vertex.receiver = vertex.receiver)
+```
+
+```{r}
+# Chord diagram
+par(mfrow=c(1,1))
+netVisual_aggregate(cellchat_control, signaling = pathways.show, layout = "chord")
+```
+
+```{r}
+# Heatmap
+par(mfrow=c(1,1))
+netVisual_heatmap(cellchat_control, signaling = pathways.show, color.heatmap = "Reds")
+```
+
+```{r}
+netVisual_bubble(cellchat_control, sources.use = 4, targets.use = c(5:11), remove.isolate = FALSE)
+```
+
+```{r}
+netVisual_chord_gene(cellchat_control, sources.use = 4, targets.use = c(5:11), lab.cex = 0.5,legend.pos.y = 30)
+```
+
+```{r}
+# Compute the network centrality scores
+cellchat_control <- netAnalysis_computeCentrality(cellchat_control, slot.name = "netP") # the slot 'netP' means the inferred intercellular communication network of signaling pathways
+```
+
+
+```{r}
+selectK(cellchat_control, pattern = "outgoing")
+```
+
+```{r}
+nPatterns = 3
+cellchat_control <- identifyCommunicationPatterns(cellchat_control, pattern = "outgoing", k = nPatterns)
+```
+
+```{r}
+# river plot
+netAnalysis_river(cellchat_control, pattern = "outgoing")
+#> Please make sure you have load `library(ggalluvial)` when running this function
+```
+
+```{r}
+# dot plot
+netAnalysis_dot(cellchat_control, pattern = "outgoing")
+```
+
+```{r}
+selectK(cellchat_control, pattern = "incoming")
+```
+
+```{r}
+nPatterns = 4
+cellchat_control <- identifyCommunicationPatterns(cellchat_control, pattern = "incoming", k = nPatterns)
+```
+
+```{r}
+# river plot
+netAnalysis_river(cellchat_control, pattern = "incoming")
+```
+
+```{r}
+# dot plot
+netAnalysis_dot(cellchat_control, pattern = "incoming")
+```
+
+```{r}
+cellchat_control <- computeNetSimilarity(cellchat_control, type = "functional")
+cellchat_control <- netEmbedding(cellchat_control, type = "functional")
+#> Manifold learning of the signaling networks for a single dataset
+#cellchat_control <- netClustering(cellchat_control, type = "functional")
+#> Classification learning of the signaling networks for a single dataset
+# Visualization in 2D-space
+#netVisual_embedding(cellchat_control, type = "functional", label.size = 3.5)
+```
+
+```{r}
+saveRDS(cellchat_control, file = "cellchat_control.rds")
+```

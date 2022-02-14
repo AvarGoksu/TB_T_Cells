@@ -1,0 +1,44 @@
+```{r}
+library(dplyr)
+library(reshape2)
+```
+
+
+```{r}
+binary_matrix <- read.csv("binary_matrix_control.tsv", sep = "\t")
+rownames(binary_matrix) <- binary_matrix$X
+binary_matrix <- binary_matrix %>% select(-"X")
+```
+
+```{r}
+cluster_ids <- read.csv("cluster_ids_control.tsv", sep = "\t")
+rownames(cluster_ids) <- cluster_ids$X
+cluster_ids <- cluster_ids %>% select(-"X")
+
+```
+
+```{r}
+binary_matrix_clusters <- merge(cluster_ids, binary_matrix, by=0)
+rownames(binary_matrix_clusters) <- binary_matrix_clusters$Row.names
+binary_matrix_clusters <- binary_matrix_clusters %>% select(-"Row.names")
+```
+
+```{r}
+melted <- melt(binary_matrix_clusters)
+```
+```{r}
+fractions <- melted %>% 
+  group_by(cluster_ids, variable) %>%
+  summarize(total_score = sum(value), total_cells = n(), fraction = (total_score/total_cells)) %>%
+  mutate("group" = "CONTROL")
+```
+```{r}
+write.csv(fractions, "fractions_control.tsv", sep = "\t")
+```
+
+```{r}
+fractions_read <- read.csv("fractions_control.tsv")
+```
+
+
+

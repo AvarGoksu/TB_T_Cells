@@ -1,0 +1,182 @@
+```{r}
+rm(list = ls())
+library(CellChat)
+library(patchwork)
+library(reticulate)
+library(NMF)
+library(ggalluvial)
+options(stringsAsFactors = FALSE)
+CellChatDB <- CellChatDB.human # use CellChatDB.mouse if running on mouse data
+showDatabaseCategory(CellChatDB)
+```
+
+```{r}
+ad <- import("anndata", convert = FALSE)
+ad_object_case <- ad$read_h5ad("Subsampled_Case.h5ad")
+```
+
+```{r}
+# access the data matrix and normalize it
+data.input_case <- t(py_to_r(ad_object_case$X))
+data.input_case <- normalizeData(data.input_case)
+```
+
+
+```{r}
+rownames(data.input_case) <- rownames(py_to_r(ad_object_case$var))
+colnames(data.input_case) <- rownames(py_to_r(ad_object_case$obs))
+```
+
+```{r}
+# access meta data
+meta.data_case <- py_to_r(ad_object_case$obs)
+meta_case <- meta.data_case
+meta_case$Cell_ID <- row.names(meta_case)
+```
+
+```{r}
+cellchat_case <- createCellChat(object = data.input_case, meta = meta_case, group.by = "cluster_ids")
+```
+
+```{r}
+cellchat_case <- addMeta(cellchat_case, meta = meta_case)
+levels(cellchat_case@idents)
+
+
+#cellchat_case <- setIdent(cellchat_case, ident.use = "cluster_ids")
+```
+
+```{r}
+cellchat_case@DB <- CellChatDB
+```
+
+
+```{r}
+# subset the expression data of signaling genes for saving computation cost
+cellchat_case <- subsetData(cellchat_case) # This step is necessary even if using the whole database
+future::plan("multiprocess", workers = 4) # do parallel
+cellchat_case <- identifyOverExpressedGenes(cellchat_case)
+cellchat_case <- identifyOverExpressedInteractions(cellchat_case)
+# project gene expression data onto PPI network (optional)
+cellchat_case <- projectData(cellchat_case, PPI.human)
+```
+
+```{r}
+cellchat_case <- computeCommunProb(cellchat_case)
+# Filter out the cell-cell communication if there are only few number of cells in certain cell groups
+cellchat_case <- filterCommunication(cellchat_case, min.cells = 10)
+```
+
+```{r}
+cellchat_case <- computeCommunProbPathway(cellchat_case)
+```
+
+```{r}
+cellchat_case <- aggregateNet(cellchat_case)
+```
+
+
+```{r}
+groupSize <- as.numeric(table(cellchat_case@idents))
+```
+
+```{r}
+mat <- cellchat_case@net$weight
+par(mfrow = c(3,4), xpd=TRUE)
+for (i in 1:nrow(mat)) {
+  mat2 <- matrix(0, nrow = nrow(mat), ncol = ncol(mat), dimnames = dimnames(mat))
+  mat2[i, ] <- mat[i, ]
+  netVisual_circle(mat2, vertex.weight = groupSize, weight.scale = T, edge.weight.max = max(mat), title.name = rownames(mat)[i])
+}
+```
+```{r}
+df.net <- subsetCommunication(cellchat_case)
+```
+
+
+```{r}
+pathways.show <- c("CCL") 
+# Hierarchy plot
+# Here we define `vertex.receive` so that the left portion of the hierarchy plot shows signaling to fibroblast and the right portion shows signaling to immune cells 
+vertex.receiver = seq(1,4) # a numeric vector. 
+netVisual_aggregate(cellchat_case, signaling = pathways.show,  vertex.receiver = vertex.receiver)
+```
+```{r}
+# Chord diagram
+par(mfrow=c(1,1))
+netVisual_aggregate(cellchat_case, signaling = pathways.show, layout = "chord")
+```
+```{r}
+# Heatmap
+par(mfrow=c(1,1))
+netVisual_heatmap(cellchat_case, signaling = pathways.show, color.heatmap = "Reds")
+```
+
+```{r}
+netVisual_bubble(cellchat_case, sources.use = 4, targets.use = c(5:11), remove.isolate = FALSE)
+```
+
+```{r}
+netVisual_chord_gene(cellchat_case, sources.use = 4, targets.use = c(5:11), lab.cex = 0.5,legend.pos.y = 30)
+
+```
+
+
+```{r}
+# Compute the network centrality scores
+cellchat_case <- netAnalysis_computeCentrality(cellchat_case, slot.name = "netP") # the slot 'netP' means the inferred intercellular communication network of signaling pathways
+```
+```{r}
+selectK(cellchat_case, pattern = "outgoing")
+```
+
+```{r}
+nPatterns = 3
+cellchat_case <- identifyCommunicationPatterns(cellchat_case, pattern = "outgoing", k = nPatterns)
+```
+
+```{r}
+# river plot
+netAnalysis_river(cellchat_case, pattern = "outgoing")
+#> Please make sure you have load `library(ggalluvial)` when running this function
+```
+
+```{r}
+# dot plot
+netAnalysis_dot(cellchat_case, pattern = "outgoing")
+```
+
+```{r}
+selectK(cellchat_case, pattern = "incoming")
+```
+
+```{r}
+nPatterns = 4
+cellchat_case <- identifyCommunicationPatterns(cellchat_case, pattern = "incoming", k = nPatterns)
+```
+
+```{r}
+# river plot
+netAnalysis_river(cellchat_case, pattern = "incoming")
+```
+
+```{r}
+# dot plot
+netAnalysis_dot(cellchat_case, pattern = "incoming")
+```
+
+```{r}
+cellchat_case <- computeNetSimilarity(cellchat_case, type = "functional")
+cellchat_case <- netEmbedding(cellchat_case, type = "functional")
+#> Manifold learning of the signaling networks for a single dataset
+#cellchat_case <- netClustering(cellchat_case, type = "functional")
+#> Classification learning of the signaling networks for a single dataset
+# Visualization in 2D-space
+#netVisual_embedding(cellchat_case, type = "functional", label.size = 3.5)
+```
+
+```{r}
+saveRDS(cellchat_case, file = "cellchat_case.rds")
+```
+
+

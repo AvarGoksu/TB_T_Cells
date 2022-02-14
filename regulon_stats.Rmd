@@ -1,0 +1,127 @@
+```{r}
+rm(list = ls())
+library(dplyr)
+library(ggplot2)
+library(stringr)
+library(quanteda)
+library(plotly)
+library(ggpubr)
+library(reshape2)
+```
+
+
+```{r}
+fractions_case <- read.csv("fractions_case.tsv")
+fractions_control <- read.csv("fractions_control.tsv")
+
+```
+
+```{r}
+fractions_case <- fractions_case %>% mutate(cluster_regulon = paste0(cluster_ids, variable))
+fractions_control <- fractions_control %>% mutate(cluster_regulon = paste0(cluster_ids, variable))
+
+```
+
+```{r}
+fractions <- merge(fractions_case, fractions_control, by = "cluster_regulon")
+```
+
+```{r}
+fractions <- fractions %>%
+  dplyr::select(cluster_regulon, cluster_ids.x, variable.x, fraction.x, fraction.y) %>%
+  dplyr::rename("cluster_ids" = "cluster_ids.x", "regulon" = "variable.x",
+                "fraction_case" = "fraction.x", "fraction_control" = "fraction.y")
+```
+
+
+```{r}
+fractions_melted <- melt(fractions)
+```
+
+```{r}
+ggplot(fractions_melted, aes(x=value, color=variable)) +
+  geom_density()
+```
+```{r}
+fractions <- fractions %>%
+ mutate(abs_dif = abs(fraction_case - fraction_control), dif = fraction_case - fraction_control) %>%
+  arrange(desc(abs_dif))
+```
+
+```{r}
+ggplot(fractions, aes(x=dif)) +
+  geom_density()
+```
+```{r}
+ggplot(fractions) +
+  geom_qq(aes(sample=dif))
+```
+
+```{r}
+fractions_31 <- fractions %>%
+  filter(cluster_ids == "C-31") %>%
+  select(-fraction_case,-fraction_control,-abs_dif) 
+```
+
+
+```{r}
+fractions <- fractions %>%
+  mutate(transient_id = str_sub(cluster_ids, 3)) 
+```
+
+```{r}
+fractions$transient_id <- as.numeric(as.character(fractions$transient_id))
+```
+
+```{r}
+fractions <- fractions %>% 
+  arrange(transient_id) 
+```
+
+```{r}
+fractions$transient_id <- as.character(fractions$transient_id)
+```
+
+
+```{r}
+#order <- c("C-1","C-2","C-3","C-4","C-5","C-6","C-7","C-8","C-9","C-10","C-11","C-12","C-13","C-14","C-15","C-16","C-17","C-18","C-19","C-20","C-21","C-22","C-23","C-24","C-25","C-26","C-27","C-28","C-29","C-30","C-31")
+
+
+p <- ggplot(fractions, aes(x=dif, y=reorder(transient_id,sort(as.numeric(transient_id)))))+
+  geom_boxplot()
+
+ggplotly(p) %>% style(hoverinfo="regulon")
+
+
+p <- fractions %>% plot_ly(x=~dif, y=~reorder(transient_id,sort(as.numeric(transient_id))), type = "box") %>% add_trace(text = fractions$regulon,
+hoverinfo="text")
+
+htmlwidgets::saveWidget(as_widget(p), "p.html")
+
+```
+
+```{r}
+is_outlier <- function(x) {
+  return(x < quantile(x, 0.25) - 1.5 * IQR(x) | x > quantile(x, 0.75) + 1.5 * IQR(x))
+}
+
+
+
+fractions_31 <- fractions %>%
+  filter(cluster_ids == "C-31") %>%
+  select(-dif, -abs_dif, -transient_id) %>%
+  melt()
+
+ggpaired(fractions_31, x="variable", y="value", color = "variable", palette = "jco", 
+          line.color = "gray", id="regulon",line.size = 0.4, label="regulon",label.select = c("SPIB...", "NUAK2...", "NR4A1...", "TRIM28...", "SOX4..."))
+#ggplot(fractions_31, aes(y=value, color=variable))+
+ # geom_boxplot()
+  
+```
+```{r}
+png("regulon_difs.png", width=1800, height=2400)
+ggplot(fractions, aes(x=dif, y=regulon))+
+  geom_boxplot()
+dev.off()
+```
+

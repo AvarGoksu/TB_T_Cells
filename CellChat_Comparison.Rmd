@@ -1,0 +1,213 @@
+```{r}
+rm(list = ls())
+library(CellChat)
+library(patchwork)
+library(reticulate)
+library(NMF)
+library(ggalluvial)
+options(stringsAsFactors = FALSE)
+CellChatDB <- CellChatDB.human # use CellChatDB.mouse if running on mouse data
+showDatabaseCategory(CellChatDB)
+```
+```{r}
+cellchat_case <- readRDS("cellchat_case.rds")
+cellchat_control <- readRDS("cellchat_control.rds")
+```
+
+```{r}
+object.list <- list(ACTIVE = cellchat_case, LATENT = cellchat_control)
+cellchat <- mergeCellChat(object.list, add.names = names(object.list))
+cellchat@DB <- CellChatDB
+cellchat
+```
+
+```{r}
+gg1 <- compareInteractions(cellchat, show.legend = F, group = c(1,2))
+gg2 <- compareInteractions(cellchat, show.legend = F, group = c(1,2), measure = "weight")
+gg1 + gg2
+```
+
+```{r}
+gg1 <- netVisual_heatmap(cellchat, font.size.title = 14)
+#> Do heatmap based on a merged object
+gg2 <- netVisual_heatmap(cellchat, measure = "weight", font.size.title = 14)
+#> Do heatmap based on a merged object
+pdf("HeatmapDifferentialInteractions.pdf", width=14, height=7)
+gg1 + gg2
+dev.off()
+```
+
+```{r}
+#Differential number of interactions or interaction strength among different cell types
+
+group.cellType <- c(rep("C-5", 4), rep("C-9", 4), rep("C-20", 4), rep("C-30", 4), rep("C-31", 4))
+group.cellType <- factor(group.cellType, levels = c("C-5", "C-9","C-20", "C-30", "C-31"))
+object.list <- lapply(object.list, function(x) {mergeInteractions(x, group.cellType)})
+cellchat <- mergeCellChat(object.list, add.names = names(object.list))
+```
+
+```{r}
+num.link <- sapply(object.list, function(x) {rowSums(x@net$count) + colSums(x@net$count)-diag(x@net$count)})
+weight.MinMax <- c(min(num.link), max(num.link)) # control the dot size in the different datasets
+gg <- list()
+for (i in 1:length(object.list)) {
+  gg[[i]] <- netAnalysis_signalingRole_scatter(object.list[[i]], title = names(object.list)[i], weight.MinMax = weight.MinMax)
+}
+#> Signaling role analysis on the aggregated cell-cell communication network from all signaling pathways
+#> Signaling role analysis on the aggregated cell-cell communication network from all signaling pathways
+patchwork::wrap_plots(plots = gg)
+```
+```{r}
+gg1 <- netAnalysis_signalingChanges_scatter(cellchat, idents.use = "C-17")
+                                            #,signaling.exclude = "C-9")
+
+
+#gg2 <- netAnalysis_signalingChanges_scatter(cellchat, idents.use = "C-30", signaling.exclude = c("MIF"))
+
+#patchwork::wrap_plots(plots = list(gg1,gg2))
+
+pdf("SignalingChangeC17.pdf", width = 8, height = 8)
+gg1
+dev.off()
+
+```
+```{r}
+cellchat <- computeNetSimilarityPairwise(cellchat, type = "functional")
+#> Compute signaling network similarity for datasets 1 2
+cellchat <- netEmbedding(cellchat, type = "functional")
+#> Manifold learning of the signaling networks for datasets 1 2
+cellchat <- netClustering(cellchat, type = "functional")
+#> Classification learning of the signaling networks for datasets 1 2
+# Visualization in 2D-space
+pdf("FunctionalSimilarity.pdf", width=8, height = 8)
+netVisual_embeddingPairwise(cellchat, type = "functional", label.size = 3)
+dev.off()
+#> 2D visualization of signaling networks from datasets 1 2
+```
+```{r}
+gg1 <- rankNet(cellchat, mode = "comparison", stacked = T, do.stat = TRUE)
+gg2 <- rankNet(cellchat, mode = "comparison", stacked = F, do.stat = TRUE)
+
+pdf("GeneralComparison.pdf", width=8, height=5)
+gg1 + gg2
+dev.off()
+```
+```{r}
+library(ComplexHeatmap)
+i = 1
+# combining all the identified signaling pathways from different datasets 
+pathway.union <- union(object.list[[i]]@netP$pathways, object.list[[i+1]]@netP$pathways)
+ht1 = netAnalysis_signalingRole_heatmap(object.list[[i]], pattern = "outgoing", signaling = pathway.union, title = names(object.list)[i], width = 8, height = 6)
+ht2 = netAnalysis_signalingRole_heatmap(object.list[[i+1]], pattern = "outgoing", signaling = pathway.union, title = names(object.list)[i+1], width = 8, height = 6)
+
+pdf("HeatmapOutgoing.pdf", width=14, height=5)
+draw(ht1 + ht2, ht_gap = unit(0.5, "cm"))
+dev.off()
+```
+```{r}
+ht1 = netAnalysis_signalingRole_heatmap(object.list[[i]], pattern = "incoming", signaling = pathway.union, title = names(object.list)[i], width = 8, height = 6, color.heatmap = "GnBu")
+ht2 = netAnalysis_signalingRole_heatmap(object.list[[i+1]], pattern = "incoming", signaling = pathway.union, title = names(object.list)[i+1], width = 8, height = 6, color.heatmap = "GnBu")
+
+pdf("HeatmapIncoming.pdf", width=14, height=5)
+draw(ht1 + ht2, ht_gap = unit(0.5, "cm"))
+dev.off()
+```
+
+```{r}
+ht1 = netAnalysis_signalingRole_heatmap(object.list[[i]], pattern = "all", signaling = pathway.union, title = names(object.list)[i], width = 8, height = 6, color.heatmap = "OrRd")
+ht2 = netAnalysis_signalingRole_heatmap(object.list[[i+1]], pattern = "all", signaling = pathway.union, title = names(object.list)[i+1], width = 8, height = 6, color.heatmap = "OrRd")
+
+pdf("HeatmapTotal.pdf", width=14, height=5)
+draw(ht1 + ht2, ht_gap = unit(0.5, "cm"))
+dev.off()
+```
+
+```{r}
+netVisual_bubble(cellchat, sources.use = 4, targets.use = c(5:11),  comparison = c(1, 2), angle.x = 45)
+#> Comparing communications on a merged object
+```
+
+```{r}
+gg1 <- netVisual_bubble(cellchat, sources.use = 4, targets.use = c(5:11),  comparison = c(1, 2), max.dataset = 2, title.name = "Increased signaling in LATENT", angle.x = 45, remove.isolate = T)
+#> Comparing communications on a merged object
+gg2 <- netVisual_bubble(cellchat, sources.use = 4, targets.use = c(5:11),  comparison = c(1, 2), max.dataset = 1, title.name = "Decreased signaling in LATENT", angle.x = 45, remove.isolate = T)
+#> Comparing communications on a merged object
+gg1 + gg2
+```
+```{r}
+df.net <- subsetCommunication(cellchat)
+```
+
+```{r}
+pathways_list <- unique(df.net[["ACTIVE"]]$pathway_name)
+
+for (j in pathways_list) {
+pathways.show <- c(j) 
+par(mfrow = c(1,2), xpd=TRUE)
+ht <- list()
+for (i in 1:length(object.list)) {
+  ht[[i]] <- netVisual_heatmap(object.list[[i]], signaling = pathways.show, color.heatmap = "Reds",title.name = paste(pathways.show, "signaling ",names(object.list)[i]))
+}
+
+pdf(paste0("Network_", j, ".pdf"), width = 14, height = 7)
+ComplexHeatmap::draw(ht[[1]] + ht[[2]], ht_gap = unit(0.5, "cm"))
+dev.off()}
+```
+
+```{r}
+contribution_list <- c("IL16", "ITGB2", "MIF", "CD99")
+netAnalysis_contribution(cellchat_case, signaling = contribution_list)
+netAnalysis_contribution(cellchat_control, signaling = contribution_list)
+
+```
+
+```{r}
+selectK(cellchat_case, pattern = "outgoing")
+```
+
+```{r}
+selectK(cellchat_control, pattern = "outgoing")
+```
+
+```{r}
+nPatterns = 2
+cellchat_case <- identifyCommunicationPatterns(cellchat_case, pattern = "outgoing", k = nPatterns)
+
+netAnalysis_river(cellchat_case, pattern = "outgoing")
+```
+
+```{r}
+nPatterns = 2
+cellchat_control <- identifyCommunicationPatterns(cellchat_control, pattern = "outgoing", k = nPatterns)
+
+netAnalysis_river(cellchat_control, pattern = "outgoing")
+```
+
+```{r}
+netAnalysis_dot(cellchat_case, pattern = "outgoing")
+netAnalysis_dot(cellchat_control, pattern = "outgoing")
+
+```
+
+```{r}
+selectK(cellchat_case, pattern = "incoming")
+```
+
+
+```{r}
+selectK(cellchat_control, pattern = "incoming")
+```
+
+```{r}
+nPatterns = 4
+cellchat_case <- identifyCommunicationPatterns(cellchat_case, pattern = "incoming", k = nPatterns)
+
+netAnalysis_river(cellchat_case, pattern = "incoming")
+```
+
+```{r}
+nPatterns = 4
+cellchat_control <- identifyCommunicationPatterns(cellchat_control, pattern = "incoming", k = nPatterns)
+
+netAnalysis_river(cellchat_control, pattern = "incoming")
+```
