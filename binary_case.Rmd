@@ -1,30 +1,115 @@
 ```{r}
-library(dplyr)
+rm(list = ls())
+```
+
+
+```{r}
+library(tidyverse)
 library(reshape2)
+library(stringr)
+library(dplyr)
+library(ggrepel)
 ```
 
 
 ```{r}
-binary_matrix <- read.csv("binary_matrix_case.tsv", sep = "\t")
-rownames(binary_matrix) <- binary_matrix$X
-binary_matrix <- binary_matrix %>% select(-"X")
+binary_matrix_case <- read.csv("binary_matrix_case.tsv", sep = "\t")
+rownames(binary_matrix_case) <- binary_matrix_case$X
+binary_matrix_case <- binary_matrix_case %>% select(-"X")
+
+
+binary_matrix_control <- read.csv("binary_matrix_control.tsv", sep = "\t")
+rownames(binary_matrix_control) <- binary_matrix_control$X
+binary_matrix_control <- binary_matrix_control %>% select(-"X")
 ```
 
 ```{r}
-cluster_ids <- read.csv("cluster_ids_case.tsv", sep = "\t")
-rownames(cluster_ids) <- cluster_ids$X
-cluster_ids <- cluster_ids %>% select(-"X")
+cluster_ids_case <- read.csv("cluster_ids_case.tsv", sep = "\t")
+rownames(cluster_ids_case) <- cluster_ids_case$X
+cluster_ids_case <- cluster_ids_case %>% select(-"X")
 
+cluster_ids_control <- read.csv("cluster_ids_control.tsv", sep = "\t")
+rownames(cluster_ids_control) <- cluster_ids_control$X
+cluster_ids_control <- cluster_ids_control %>% select(-"X")
 ```
 
 ```{r}
-binary_matrix_clusters <- merge(cluster_ids, binary_matrix, by=0)
-rownames(binary_matrix_clusters) <- binary_matrix_clusters$Row.names
-binary_matrix_clusters <- binary_matrix_clusters %>% select(-"Row.names")
+binary_matrix_clusters_case <- merge(cluster_ids_case, binary_matrix_case, by=0)
+rownames(binary_matrix_clusters_case) <- binary_matrix_clusters_case$Row.names
+colnames(binary_matrix_clusters_case) <- str_replace(colnames(binary_matrix_clusters_case), "\\.\\.\\.", "")
+
+binary_matrix_clusters_case <- binary_matrix_clusters_case %>% 
+  select(-"Row.names")
+
+
+binary_matrix_clusters_control <- merge(cluster_ids_control, binary_matrix_control, by=0)
+rownames(binary_matrix_clusters_control) <- binary_matrix_clusters_control$Row.names
+colnames(binary_matrix_clusters_control) <- str_replace(colnames(binary_matrix_clusters_control), "\\.\\.\\.", "")
+
+binary_matrix_clusters_control <- binary_matrix_clusters_control %>% 
+  select(-"Row.names")
+```
+
+
+```{r}
+melted_case <- melt(binary_matrix_clusters_case)
+
+melted_case <- melted_case %>%
+  mutate(cluster_regulon = paste0(cluster_ids, variable)) 
+
+
+melted_control <- melt(binary_matrix_clusters_control)
+
+melted_control <- melted_control %>%
+  mutate(cluster_regulon = paste0(cluster_ids, variable)) 
 ```
 
 ```{r}
-melted <- melt(binary_matrix_clusters)
+actives_totals_case <- melted_case %>% group_by(cluster_ids) %>% mutate(active = sum(value), total = n())
+actives_totals_control <- melted_control %>% group_by(cluster_ids) %>% mutate(active = sum(value), total = n())
+
+full_enrichment_case <- actives_totals_case %>% group_by(cluster_regulon) %>% mutate(picked_active = sum(value), picked_total = n())
+full_enrichment_control <- actives_totals_control %>% group_by(cluster_regulon) %>% mutate(picked_active = sum(value), picked_total = n())
+
+enrichment_case <- full_enrichment_case %>% mutate(enrichment_p = phyper(picked_active-1, active, total-active, picked_total, lower.tail = FALSE, log=TRUE)*(-1))
+enrichment_control <- full_enrichment_control %>% mutate(enrichment_p = phyper(picked_active-1, active, total-active, picked_total, lower.tail = FALSE, log=TRUE)*(-1))
+```
+
+```{r}
+enrichment_case_unique <- enrichment_case %>% select(-value) %>% distinct()
+enrichment_control_unique <- enrichment_control %>% select(-value) %>% distinct()
+```
+
+```{r}
+enrichment_merged <- merge(enrichment_case_unique, enrichment_control_unique, by="cluster_regulon")
+```
+
+```{r}
+order <- c("C-1","C-2","C-3","C-4","C-5","C-6","C-7","C-8","C-9","C-10","C-11","C-12","C-13","C-14","C-15","C-16","C-17","C-18","C-19","C-20","C-21","C-22","C-23","C-24","C-25","C-26","C-27","C-28","C-29","C-30","C-31")
+
+enrichment_merged$cluster_ids.x <- factor(enrichment_merged$cluster_ids.x, levels = order)
+```
+
+
+
+```{r}
+pdf("enrichment_regulon.pdf", height=10, width=10)
+ggplot(enrichment_merged, aes(x=enrichment_p.x, y=enrichment_p.y)) +
+  geom_point()+
+  geom_label_repel(data=subset(enrichment_merged, enrichment_p.x>1000 | enrichment_p.y>1000), aes(label=cluster_regulon))
+dev.off()
+```
+
+
+```{r}
+pdf("enrichment_full.pdf", height=20, width=14)
+enrichment_merged %>%
+  ggplot(aes(x=enrichment_p.x, y=enrichment_p.y)) +
+  geom_point() +
+  facet_wrap(vars(cluster_ids.x), scales="free")+
+  theme_classic()+
+  geom_label_repel(aes(label=variable.x), size=1.75, max.overlaps = 15)
+dev.off()
 ```
 
 ```{r}
